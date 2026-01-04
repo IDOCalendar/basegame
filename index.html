@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Base Runner: High Score</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #87CEEB; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 10px; left: 10px; font-family: sans-serif; }
+    </style>
+</head>
+<body>
+
+    <div id="ui" class="pointer-events-none w-full pr-5">
+        <h1 class="text-white font-bold text-2xl drop-shadow-md">base runner</h1>
+        <p class="text-white text-sm">space/tap = jump | f/click = shoot</p>
+        
+        <div class="mt-2 flex gap-4">
+            <div class="text-4xl font-black text-yellow-300 drop-shadow-lg">
+                score: <span id="scoreVal">0</span>
+            </div>
+            <div class="text-xl font-bold text-white/80 mt-2">
+                best: <span id="highScoreVal">0</span>
+            </div>
+        </div>
+        
+        <div id="gameOverScreen" class="hidden fixed inset-0 flex items-center justify-center bg-black/50 pointer-events-auto">
+            <div class="bg-white p-6 rounded-2xl text-center shadow-2xl">
+                <h2 class="text-2xl font-bold mb-4 text-red-500">game over!</h2>
+                <p class="text-gray-500 mb-4">score: <span id="finalScore">0</span></p>
+                <button onclick="resetGame()" class="bg-blue-600 text-white px-6 py-2 rounded-full font-bold hover:bg-blue-500 transition-transform active:scale-95">try again</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('scoreVal');
+        const highScoreEl = document.getElementById('highScoreVal');
+        const finalScoreEl = document.getElementById('finalScore');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // --- НАСТРОЙКИ (меняй цифры тут, чтобы обновлять игру) ---
+        let gameSpeed = 6;       // начальная скорость
+        const jumpForce = -16;   // сила прыжка (чем меньше число, тем выше)
+        const gravityVal = 0.8;  // гравитация (тяжесть персонажа)
+        // -------------------------------------------------------
+
+        let score = 0;
+        // загружаем рекорд из памяти браузера
+        let highScore = localStorage.getItem('baseRunnerHighScore') || 0;
+        highScoreEl.innerText = highScore;
+
+        let gameRunning = true;
+        let frame = 0;
+
+        const player = {
+            x: 50,
+            y: 0,
+            width: 50,
+            height: 50,
+            dy: 0,
+            jumpPower: jumpForce,
+            gravity: gravityVal,
+            grounded: false
+        };
+
+        let obstacles = [];
+        let items = [];
+        let bullets = [];
+
+        const COLORS = {
+            sky: '#87CEEB',
+            ground: '#2D1B4E',
+            player: '#D946EF',
+            obstacle: '#F59E0B',
+            item: '#E9D5FF',
+            bullet: '#EF4444'
+        };
+
+        let groundHeight = 100;
+        
+        function updateCanvasSize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            if (player.grounded) {
+                player.y = canvas.height - groundHeight - player.height;
+            }
+        }
+        window.addEventListener('resize', updateCanvasSize);
+
+        // управление
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') jump();
+            if (e.code === 'KeyF') shoot();
+        });
+        window.addEventListener('touchstart', (e) => {
+            if (e.touches[0].clientY < window.innerHeight / 2) jump();
+            else shoot();
+        });
+        window.addEventListener('mousedown', () => shoot());
+
+        function jump() {
+            if (player.grounded && gameRunning) {
+                player.dy = player.jumpPower;
+                player.grounded = false;
+            }
+        }
+
+        function shoot() {
+            if (!gameRunning) return;
+            bullets.push({
+                x: player.x + player.width,
+                y: player.y + player.height / 2,
+                width: 20,
+                height: 5,
+                speed: 12
+            });
+        }
+
+        function spawnObstacle() {
+            obstacles.push({
+                x: canvas.width,
+                y: canvas.height - groundHeight - 60,
+                width: 40,
+                height: 60,
+                color: COLORS.obstacle
+            });
+        }
+
+        function spawnItem() {
+            let minH = 10;
+            let maxH = 160;
+            let randomH = Math.floor(Math.random() * (maxH - minH + 1)) + minH;
+
+            items.push({
+                x: canvas.width,
+                y: canvas.height - groundHeight - randomH - 30,
+                width: 25,
+                height: 35,
+                color: COLORS.item
+            });
+        }
+
+        function checkHighScore() {
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('baseRunnerHighScore', highScore);
+                highScoreEl.innerText = highScore;
+            }
+        }
+
+        function resetGame() {
+            obstacles = [];
+            items = [];
+            bullets = [];
+            score = 0;
+            scoreEl.innerText = score;
+            gameRunning = true;
+            gameSpeed = 6;
+            player.dy = 0;
+            player.y = canvas.height - groundHeight - player.height;
+            gameOverScreen.classList.add('hidden');
+            animate();
+        }
+
+        function rectIntersect(r1, r2) {
+            return !(r2.x > r1.x + r1.width || 
+                     r2.x + r2.width < r1.x || 
+                     r2.y > r1.y + r1.height || 
+                     r2.y + r2.height < r1.y);
+        }
+
+        function animate() {
+            if (!gameRunning) return;
+
+            requestAnimationFrame(animate);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            frame++;
+
+            // фон
+            ctx.fillStyle = COLORS.sky;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = COLORS.ground;
+            ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
+
+            // игрок
+            player.dy += player.gravity;
+            player.y += player.dy;
+
+            if (player.y + player.height > canvas.height - groundHeight) {
+                player.y = canvas.height - groundHeight - player.height;
+                player.dy = 0;
+                player.grounded = true;
+            } else {
+                player.grounded = false;
+            }
+
+            ctx.fillStyle = COLORS.player;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.fillStyle = 'white';
+            ctx.fillRect(player.x + 30, player.y + 10, 10, 10);
+
+            // ПУЛИ
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                let b = bullets[i];
+                b.x += b.speed;
+                ctx.fillStyle = COLORS.bullet;
+                ctx.fillRect(b.x, b.y, b.width, b.height);
+
+                let bulletHit = false;
+                obstacles.forEach(obs => {
+                    if (rectIntersect(b, obs)) bulletHit = true;
+                });
+
+                if (b.x > canvas.width || bulletHit) {
+                    bullets.splice(i, 1);
+                }
+            }
+
+            // ПРЕПЯТСТВИЯ
+            if (frame % (Math.floor(Math.random() * 60) + 90) === 0) spawnObstacle();
+
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.x -= gameSpeed;
+                ctx.fillStyle = obs.color;
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+
+                if (rectIntersect(player, obs)) {
+                    gameRunning = false;
+                    checkHighScore(); // сохраняем рекорд
+                    finalScoreEl.innerText = score;
+                    gameOverScreen.classList.remove('hidden');
+                }
+
+                if (obs.x + obs.width < 0) obstacles.splice(i, 1);
+            }
+
+            // ПРЕДМЕТЫ
+            if (frame % (Math.floor(Math.random() * 80) + 100) === 0) spawnItem();
+
+            for (let i = items.length - 1; i >= 0; i--) {
+                let item = items[i];
+                item.x -= gameSpeed;
+                
+                ctx.fillStyle = item.color;
+                ctx.fillRect(item.x, item.y, item.width, item.height);
+                ctx.fillStyle = 'purple'; 
+                ctx.fillRect(item.x, item.y, item.width, 5); 
+
+                let collected = false;
+                if (rectIntersect(player, item)) collected = true;
+                bullets.forEach((b) => {
+                    if (rectIntersect(b, item)) collected = true; 
+                });
+
+                if (collected) {
+                    score += 10;
+                    scoreEl.innerText = score;
+                    items.splice(i, 1);
+                } else if (item.x + item.width < 0) {
+                    items.splice(i, 1);
+                }
+            }
+
+            if (frame % 600 === 0) gameSpeed += 0.5;
+        }
+
+        updateCanvasSize();
+        animate();
+
+    </script>
+</body>
+</html>
