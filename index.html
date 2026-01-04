@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Base Runner: High Score</title>
+    <title>Base Runner: Double Jump</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #87CEEB; }
@@ -14,8 +14,8 @@
 <body>
 
     <div id="ui" class="pointer-events-none w-full pr-5">
-        <h1 class="text-white font-bold text-2xl drop-shadow-md">base runner</h1>
-        <p class="text-white text-sm">space/tap = jump | f/click = shoot</p>
+        <h1 class="text-white font-bold text-2xl drop-shadow-md">base runner v3</h1>
+        <p class="text-white text-sm">space x2 = double jump | f = shoot</p>
         
         <div class="mt-2 flex gap-4">
             <div class="text-4xl font-black text-yellow-300 drop-shadow-lg">
@@ -48,14 +48,14 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // --- НАСТРОЙКИ (меняй цифры тут, чтобы обновлять игру) ---
-        let gameSpeed = 6;       // начальная скорость
-        const jumpForce = -16;   // сила прыжка (чем меньше число, тем выше)
-        const gravityVal = 0.8;  // гравитация (тяжесть персонажа)
-        // -------------------------------------------------------
+        // --- НАСТРОЙКИ ---
+        let gameSpeed = 6;
+        const jumpForce = -15;    // сила одного прыжка
+        const gravityVal = 0.7;   // гравитация (чуть легче для двойного прыжка)
+        const maxJumps = 2;       // сколько прыжков можно сделать (2 = двойной)
+        // -----------------
 
         let score = 0;
-        // загружаем рекорд из памяти браузера
         let highScore = localStorage.getItem('baseRunnerHighScore') || 0;
         highScoreEl.innerText = highScore;
 
@@ -68,8 +68,7 @@
             width: 50,
             height: 50,
             dy: 0,
-            jumpPower: jumpForce,
-            gravity: gravityVal,
+            jumpCount: 0, // счетчик прыжков
             grounded: false
         };
 
@@ -109,9 +108,16 @@
         window.addEventListener('mousedown', () => shoot());
 
         function jump() {
-            if (player.grounded && gameRunning) {
-                player.dy = player.jumpPower;
+            if (!gameRunning) return;
+            
+            // логика двойного прыжка
+            // прыгаем, если стоим на земле ИЛИ если сделали меньше максимума прыжков
+            if (player.grounded || player.jumpCount < maxJumps) {
+                player.dy = jumpForce;
                 player.grounded = false;
+                player.jumpCount++; // засчитываем прыжок
+                
+                // визуальный эффект (можно добавить частицы потом)
             }
         }
 
@@ -127,18 +133,39 @@
         }
 
         function spawnObstacle() {
+            // рандомайзер типа препятствия
+            const type = Math.random();
+            let obsW, obsH, obsY;
+
+            if (type < 0.33) {
+                // 1. классический вертикальный (высокий)
+                obsW = 40;
+                obsH = 80; 
+                obsY = canvas.height - groundHeight - obsH;
+            } else if (type < 0.66) {
+                // 2. горизонтальный (длинный и низкий) - требует длинного прыжка
+                obsW = 120; // широкий!
+                obsH = 40;
+                obsY = canvas.height - groundHeight - obsH;
+            } else {
+                // 3. воздушный блок (надо проскочить под ним или перепрыгнуть)
+                obsW = 60;
+                obsH = 40;
+                obsY = canvas.height - groundHeight - 110; // висит в воздухе
+            }
+
             obstacles.push({
                 x: canvas.width,
-                y: canvas.height - groundHeight - 60,
-                width: 40,
-                height: 60,
+                y: obsY,
+                width: obsW,
+                height: obsH,
                 color: COLORS.obstacle
             });
         }
 
         function spawnItem() {
             let minH = 10;
-            let maxH = 160;
+            let maxH = 200; // теперь предметы могут быть выше (под двойной прыжок)
             let randomH = Math.floor(Math.random() * (maxH - minH + 1)) + minH;
 
             items.push({
@@ -167,6 +194,7 @@
             gameRunning = true;
             gameSpeed = 6;
             player.dy = 0;
+            player.jumpCount = 0;
             player.y = canvas.height - groundHeight - player.height;
             gameOverScreen.classList.add('hidden');
             animate();
@@ -192,92 +220,34 @@
             ctx.fillStyle = COLORS.ground;
             ctx.fillRect(0, canvas.height - groundHeight, canvas.width, groundHeight);
 
-            // игрок
-            player.dy += player.gravity;
-            player.y += player.dy;
+            // физика игрока
+            player.dy += player.gravity; // добавляем гравитацию
+            player.y += player.dy;       // двигаем игрока
 
+            // проверка столкновения с полом
             if (player.y + player.height > canvas.height - groundHeight) {
                 player.y = canvas.height - groundHeight - player.height;
                 player.dy = 0;
                 player.grounded = true;
+                player.jumpCount = 0; // сбрасываем счетчик прыжков при касании земли
             } else {
                 player.grounded = false;
             }
 
+            // отрисовка игрока
             ctx.fillStyle = COLORS.player;
             ctx.fillRect(player.x, player.y, player.width, player.height);
+            // лицо
             ctx.fillStyle = 'white';
             ctx.fillRect(player.x + 30, player.y + 10, 10, 10);
+            
+            // если есть второй прыжок в запасе, рисуем индикатор (маленькую точку над головой)
+            if (player.jumpCount < maxJumps) {
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(player.x + 25, player.y - 10, 4, 0, Math.PI*2);
+                ctx.fill();
+            }
 
             // ПУЛИ
-            for (let i = bullets.length - 1; i >= 0; i--) {
-                let b = bullets[i];
-                b.x += b.speed;
-                ctx.fillStyle = COLORS.bullet;
-                ctx.fillRect(b.x, b.y, b.width, b.height);
-
-                let bulletHit = false;
-                obstacles.forEach(obs => {
-                    if (rectIntersect(b, obs)) bulletHit = true;
-                });
-
-                if (b.x > canvas.width || bulletHit) {
-                    bullets.splice(i, 1);
-                }
-            }
-
-            // ПРЕПЯТСТВИЯ
-            if (frame % (Math.floor(Math.random() * 60) + 90) === 0) spawnObstacle();
-
-            for (let i = obstacles.length - 1; i >= 0; i--) {
-                let obs = obstacles[i];
-                obs.x -= gameSpeed;
-                ctx.fillStyle = obs.color;
-                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-
-                if (rectIntersect(player, obs)) {
-                    gameRunning = false;
-                    checkHighScore(); // сохраняем рекорд
-                    finalScoreEl.innerText = score;
-                    gameOverScreen.classList.remove('hidden');
-                }
-
-                if (obs.x + obs.width < 0) obstacles.splice(i, 1);
-            }
-
-            // ПРЕДМЕТЫ
-            if (frame % (Math.floor(Math.random() * 80) + 100) === 0) spawnItem();
-
-            for (let i = items.length - 1; i >= 0; i--) {
-                let item = items[i];
-                item.x -= gameSpeed;
-                
-                ctx.fillStyle = item.color;
-                ctx.fillRect(item.x, item.y, item.width, item.height);
-                ctx.fillStyle = 'purple'; 
-                ctx.fillRect(item.x, item.y, item.width, 5); 
-
-                let collected = false;
-                if (rectIntersect(player, item)) collected = true;
-                bullets.forEach((b) => {
-                    if (rectIntersect(b, item)) collected = true; 
-                });
-
-                if (collected) {
-                    score += 10;
-                    scoreEl.innerText = score;
-                    items.splice(i, 1);
-                } else if (item.x + item.width < 0) {
-                    items.splice(i, 1);
-                }
-            }
-
-            if (frame % 600 === 0) gameSpeed += 0.5;
-        }
-
-        updateCanvasSize();
-        animate();
-
-    </script>
-</body>
-</html>
+            for (let i
